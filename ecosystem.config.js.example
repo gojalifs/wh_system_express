@@ -1,0 +1,22 @@
+module.exports = {
+  apps: [
+    {
+      name: 'WH_System_BE',
+      script: './dist/server.js',
+      watch: true,
+      env: {
+        PORT: 3000,
+        NODE_ENV: 'production',
+        HOST: '0.0.0.0',
+        AUTH_TOKEN: 'secret',
+        SQL_USER: 'user',
+        SQL_PASS: 'pass',
+        SQL_HOST: '192.168.1.1',
+        SQL_PORT: '1433',
+        SQL_DB: 'db',
+        SQL_ENCRYPT: 'false',
+        POLL_INTERVAL_MS: '30000',
+      },
+    },
+  ],
+};
