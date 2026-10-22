@@ -1,6 +1,9 @@
 // src/infra/db.ts
 import sql from 'mssql';
 import { ENV } from '../../core/env.js';
+import { createLogger } from '../logger.js';
+
+const log = createLogger('db');
 
 interface SqlConfigInput {
   user: string;
@@ -105,19 +108,18 @@ async function getPoolFor(
 
   // log error internal pool (mis. network drop) → reset supaya call berikutnya re-create
   newPool.on('error', (err) => {
-    console.error(`[${info.label}] pool error:`, err?.message ?? err);
+    log.error(`[${info.label}] pool error`, err?.message ?? err);
     if (state.pool === newPool) state.pool = null;
   });
 
   try {
     await newPool.connect();
-    console.log(
-      `[${info.label}] connected:`,
-      `${info.host}:${info.port || 1433}/${info.database}`
+    log.info(
+      `[${info.label}] connected ${info.host}:${info.port || 1433}/${info.database}`
     );
   } catch (err) {
-    console.error(
-      `[${info.label}] connect error:`,
+    log.error(
+      `[${info.label}] connect error`,
       (err as Error)?.message ?? err
     );
     if (state.pool === newPool) state.pool = null; // reset
@@ -162,8 +164,8 @@ export async function withDbRetry<T>(
     } catch (e) {
       lastErr = e;
       attempt++;
-      console.error(
-        `[DB] ${label} failed (attempt ${attempt}/${maxRetry}):`,
+      log.error(
+        `[DB] ${label} failed (attempt ${attempt}/${maxRetry})`,
         (e as Error)?.message ?? e
       );
       await delay(1000 * attempt); // 1s, 2s, 3s ...
@@ -205,7 +207,7 @@ export async function query<Entity>(
     } catch (err) {
       lastError = err;
       if (isTransientError(err) && attempt < retries) {
-        console.warn(
+        log.warn(
           `[SQL] Query failed (attempt ${attempt + 1}), retrying...`,
           (err as Error)?.message ?? err
         );
@@ -248,9 +250,9 @@ async function closePoolFor(state: PoolState, label: string): Promise<void> {
 
   try {
     await state.pool.close();
-    console.log(`[${label}] pool closed`);
+    log.info(`[${label}] pool closed`);
   } catch (e) {
-    console.error(`[${label}] close error:`, (e as Error)?.message ?? e);
+    log.error(`[${label}] close error`, (e as Error)?.message ?? e);
   } finally {
     state.pool = null;
   }
@@ -274,7 +276,7 @@ export async function closeAllPools(): Promise<void> {
 // optional: registrasi graceful shutdown di entrypoint (server.ts)
 export function registerDbShutdownHooks() {
   const shutdown = async (sig: string) => {
-    console.log(`[APP] received ${sig}, closing DB pools...`);
+    log.info(`received ${sig}, closing DB pools...`);
     await closeAllPools();
     process.exit(0);
   };

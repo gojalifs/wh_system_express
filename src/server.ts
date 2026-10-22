@@ -1,6 +1,7 @@
 import { start } from './index.js';
+import { logger } from './infra/logger.js';
 
 start().catch((err) => {
-  console.error('[sto-express] Failed to start:', err);
+  logger.error('failed to start', err);
   process.exit(1);
 });

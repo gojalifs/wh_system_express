@@ -13,6 +13,9 @@ import {
   type StoBuildRow,
 } from '../infra/db/buildQueue.js';
 import { getSessionPackageV4 } from './packageService.js';
+import { createLogger } from '../infra/logger.js';
+
+const log = createLogger('sto-build');
 import { getMaterialSerialsV4, SERIALS_DEFAULT_PER_PAGE } from './serialService.js';
 
 /**
@@ -70,28 +73,36 @@ export async function buildSessionBundle(build: StoBuildRow): Promise<void> {
 }
 
 async function tick(): Promise<void> {
-  await requeueStaleBuilds(ENV.STO_BUILD_STALE_MINUTES).catch((err: unknown) =>
-    console.error('[sto-build] requeue stale failed:', err)
+  const requeued = await requeueStaleBuilds(ENV.STO_BUILD_STALE_MINUTES).catch(
+    (err: unknown) => {
+      log.error('requeue stale failed', err);
+      return 0;
+    }
   );
+  if (requeued > 0) log.info(`requeued ${requeued} stale build(s)`);
 
   const concurrency = Math.min(3, Math.max(1, ENV.STO_BUILD_CONCURRENCY));
   while (activeBuilds.size < concurrency) {
     const build = await claimNextBuild().catch((err: unknown) => {
-      console.error('[sto-build] claim failed:', err);
+      log.error('claim failed', err);
       return null;
     });
     if (!build) break;
 
+    log.info(
+      `build started session=${build.session_id} v${build.cache_version} build=${build.id}`
+    );
+    const startedAt = Date.now();
     const run: Promise<void> = buildSessionBundle(build)
       .then(() => {
-        console.log(
-          `[sto-build] READY session=${build.session_id} v${build.cache_version} build=${build.id}`
+        log.info(
+          `READY session=${build.session_id} v${build.cache_version} build=${build.id} duration_ms=${Date.now() - startedAt}`
         );
       })
       .catch(async (err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
-        console.error(
-          `[sto-build] FAILED session=${build.session_id} build=${build.id}: ${message}`
+        log.error(
+          `FAILED session=${build.session_id} build=${build.id} duration_ms=${Date.now() - startedAt}: ${message}`
         );
         await failBuild(build.id, message).catch(() => undefined);
       })
@@ -105,15 +116,11 @@ async function tick(): Promise<void> {
 export function startBuildRunner(): void {
   if (timer) return;
   timer = setInterval(() => {
-    void tick().catch((err: unknown) =>
-      console.error('[sto-build] tick failed:', err)
-    );
+    void tick().catch((err: unknown) => log.error('tick failed', err));
   }, ENV.STO_RUNNER_INTERVAL_MS);
-  void tick().catch((err: unknown) =>
-    console.error('[sto-build] initial tick failed:', err)
-  );
-  console.log(
-    `[sto-build] runner started (concurrency=${ENV.STO_BUILD_CONCURRENCY}, dir=${ENV.STO_BUNDLE_DIR})`
+  void tick().catch((err: unknown) => log.error('initial tick failed', err));
+  log.info(
+    `runner started concurrency=${ENV.STO_BUILD_CONCURRENCY} interval_ms=${ENV.STO_RUNNER_INTERVAL_MS} dir=${ENV.STO_BUNDLE_DIR}`
   );
 }
 
@@ -121,5 +128,6 @@ export function stopBuildRunner(): void {
   if (timer) {
     clearInterval(timer);
     timer = null;
+    log.info('runner stopped');
   }
 }

@@ -26,6 +26,9 @@ import type {
   StoMaterialRow,
   StoScanRow,
 } from '../domain/sto.js';
+import { createLogger } from '../infra/logger.js';
+
+const log = createLogger('bundle-v3');
 
 type ScanSums = Record<string, number>;
 type WireTagMap = Record<string, string>;
@@ -327,8 +330,8 @@ export async function getBundle(
   }
 
   // Cache miss - build from DB
-  console.log(
-    `[Bundle] Cache miss for ${sessionId} page ${page}/${perPage}, building from DB`
+  log.debug(
+    `cache miss session=${sessionId} page=${page} per_page=${perPage}, building from DB`
   );
   const bundle = await buildBundleResponse(
     sessionId,

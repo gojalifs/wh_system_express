@@ -1,6 +1,9 @@
 import { Request, Response } from 'express';
 import { getBundle } from '../../services/bundleService.js';
 import { ENV } from '../../core/env.js';
+import { createLogger } from '../../infra/logger.js';
+
+const log = createLogger('sto-v3');
 
 function parsePositiveInt(value: unknown, fallback: number): number {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -30,7 +33,7 @@ export async function getSessionBundle(req: Request, res: Response) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error('[Route] Error:', message);
+    log.error(message);
 
     if (message === 'SESSION_NOT_FOUND') {
       return res.status(404).json({

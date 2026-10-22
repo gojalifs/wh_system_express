@@ -8,6 +8,9 @@ import {
 import { getVersionOnly } from '../cache/keys.js';
 import { cacheStore } from '../cache/store.js';
 import { getBuild, type BuildStatus } from '../infra/db/buildQueue.js';
+import { createLogger } from '../infra/logger.js';
+
+const log = createLogger('sto-serve');
 
 /**
  * Download path for v4 artifacts (Plan B Fase 2):
@@ -31,13 +34,24 @@ async function decide(
 ): Promise<ServeDecision> {
   const build = await getBuild(sessionId, version).catch(() => null);
 
-  if (!build) return { state: 'live' };
+  if (!build) {
+    log.debug(`no build row, live fallback session=${sessionId} v${version}`);
+    return { state: 'live' };
+  }
   if (build.status !== 'READY') {
+    log.info(
+      `bundle not ready session=${sessionId} v${version} status=${build.status}`
+    );
     return { state: 'not_ready', status: build.status };
   }
 
   const buffer = await readGzBuffer(file);
-  if (!buffer) return { state: 'live' }; // READY but file gone: degrade to live
+  if (!buffer) {
+    // READY but file gone: degrade to live
+    log.warn(`READY build but artifact missing, live fallback session=${sessionId} v${version}`);
+    return { state: 'live' };
+  }
+  log.debug(`serve artifact session=${sessionId} v${version} bytes=${buffer.length}`);
   return { state: 'file', buffer };
 }
 

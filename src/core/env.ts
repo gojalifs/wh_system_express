@@ -78,6 +78,9 @@ const stoDbTrustServerCertificate =
 export const ENV = {
   NODE_ENV: process.env.NODE_ENV ?? 'production',
 
+  // Log verbosity for src/infra/logger.ts (debug|info|warn|error)
+  LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
+
   HOST: process.env.HOST ?? '0.0.0.0',
   PORT: numberFromEnv(process.env.PORT, 3000),
   AUTH_TOKEN: process.env.AUTH_TOKEN ?? 'supersecret-lan-token',

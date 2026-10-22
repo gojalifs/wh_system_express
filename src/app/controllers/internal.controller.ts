@@ -2,6 +2,9 @@ import { Request, Response } from 'express';
 import { getVersionOnly } from '../../cache/keys.js';
 import { cacheStore } from '../../cache/store.js';
 import { enqueueBuild } from '../../infra/db/buildQueue.js';
+import { createLogger } from '../../infra/logger.js';
+
+const log = createLogger('internal');
 
 /**
  * POST /api/v4/sto/internal/prewarm  { session_id }
@@ -20,6 +23,9 @@ export async function postPrewarm(req: Request, res: Response) {
   try {
     const version = await getVersionOnly(cacheStore, sessionId);
     const build = await enqueueBuild(sessionId, version);
+    log.info(
+      `prewarm enqueued session=${sessionId} v${version} build=${build.id} status=${build.status}`
+    );
     return res.status(202).json({
       success: true,
       message: 'Build bundle masuk antrean.',
@@ -32,7 +38,7 @@ export async function postPrewarm(req: Request, res: Response) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error('[internal] prewarm failed:', message);
+    log.error(`prewarm failed session=${sessionId}: ${message}`);
     return res.status(500).json({
       success: false,
       message: 'Gagal memasukkan build ke antrean.',

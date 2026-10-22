@@ -10,6 +10,9 @@ import type {
   StoSerialRow,
   StoWireTagRow,
 } from '../../domain/sto.js';
+import { createLogger } from '../logger.js';
+
+const log = createLogger('queries');
 
 const CHUNK_SIZE = ENV.CHUNK_SIZE;
 
@@ -254,8 +257,8 @@ export async function queryWireTagFull(
     } catch (err) {
       // Linked server might not be accessible with SQL Server auth
       // Log warning but don't fail the whole request
-      console.warn(
-        '[WireTag] Linked server query failed (may need linked server security config):',
+      log.warn(
+        '[WireTag] Linked server query failed (may need linked server security config)',
         (err as Error)?.message ?? err
       );
       // Continue with empty wireTagMap for this chunk

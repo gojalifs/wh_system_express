@@ -13,6 +13,7 @@ import internalRoutes from './app/routes/internal.routes.js';
 import { startBuildRunner, stopBuildRunner } from './services/buildRunner.js';
 import { createWsServer } from './app/ws/wsHub.js';
 import { ENV } from './core/env.js';
+import { createLogger, logger } from './infra/logger.js';
 import { closeAllPools } from './infra/db/db.js';
 import { startExistingQueryPoller } from './infra/pollers/simpleTablePoller.js';
 
@@ -23,7 +24,14 @@ export async function start(): Promise<http.Server> {
   app.use(helmet());
   app.use(cors());
   app.use(express.json({ limit: '10mb' }));
-  app.use(morgan(ENV.NODE_ENV === 'development' ? 'dev' : 'combined'));
+  // HTTP access log through the app logger (stdout -> PM2 + logrotate)
+  const httpLog = createLogger('http');
+  app.use(
+    morgan(
+      ':remote-addr :method :url :status :response-time ms - :res[content-length]',
+      { stream: { write: (line: string) => httpLog.info(line.trim()) } }
+    )
+  );
 
   // Routes
   app.use(healthRoutes);
@@ -45,7 +53,7 @@ export async function start(): Promise<http.Server> {
   // Global error handler
   app.use(
     (err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-      console.error('[Express] Unhandled error:', err);
+      logger.error('unhandled error', err);
       res.status(500).json({
         success: false,
         message: 'Internal server error',
@@ -65,8 +73,8 @@ export async function start(): Promise<http.Server> {
 
   await new Promise<void>((resolve) => {
     server.listen(ENV.PORT, ENV.HOST, () => {
-      console.log(`HTTP on http://${ENV.HOST}:${ENV.PORT}`);
-      console.log(`WSS  on ws://${ENV.HOST}:${ENV.PORT}/wh_sys/ws/doc`);
+      logger.info(`HTTP on http://${ENV.HOST}:${ENV.PORT}`);
+      logger.info(`WSS  on ws://${ENV.HOST}:${ENV.PORT}/wh_sys/ws/doc`);
       resolve();
     });
   });
@@ -75,7 +83,7 @@ export async function start(): Promise<http.Server> {
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log(`\n[sto-express] Received ${signal}, shutting down...`);
+    logger.info(`received ${signal}, shutting down...`);
     stopBuildRunner();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await closeAllPools();
@@ -85,11 +93,11 @@ export async function start(): Promise<http.Server> {
   process.once('SIGTERM', () => void shutdown('SIGTERM'));
   process.once('SIGINT', () => void shutdown('SIGINT'));
   process.on('uncaughtException', (err) => {
-    console.error('[sto-express] Uncaught exception:', err);
+    logger.error('uncaught exception', err);
     void shutdown('uncaughtException');
   });
   process.on('unhandledRejection', (reason) => {
-    console.error('[sto-express] Unhandled rejection:', reason);
+    logger.error('unhandled rejection', reason);
   });
 
   return server;

@@ -11,6 +11,9 @@ import {
   sendNotReady,
 } from '../../services/bundleServeService.js';
 import { ENV } from '../../core/env.js';
+import { createLogger } from '../../infra/logger.js';
+
+const log = createLogger('sto-v4');
 
 function parsePositiveInt(value: unknown, fallback: number): number {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -19,7 +22,7 @@ function parsePositiveInt(value: unknown, fallback: number): number {
 
 function sendStoError(res: Response, err: unknown, fallbackMessage: string) {
   const message = err instanceof Error ? err.message : String(err);
-  console.error('[Route v4] Error:', message);
+  log.error(message);
 
   if (message === 'SESSION_NOT_FOUND') {
     return res.status(404).json({ success: false, message: 'Session tidak ditemukan.' });
