@@ -1,32 +1,34 @@
 {
-  "name": "wh_system-be",
+  "name": "sto-express",
   "version": "1.0.0",
-  "private": true,
-  "type": "commonjs",
-  "description": "WH System App Backend Service Using TS",
-  "main": "index.js",
+  "description": "Express.js service for STO offline bundle download - reads Laravel file cache or queries SQL Server",
+  "main": "src/index.js",
+  "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "pm2": "pm2 start ecosystem.config.js",
+    "pm2:dev": "pm2 start ecosystem.config.js --env development",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --coverage",
+    "test:watch": "node --experimental-vm-modules node_modules/.bin/jest --watch",
+    "test:ci": "node --experimental-vm-modules node_modules/.bin/jest --ci --coverage"
   },
-  "author": "Fajar",
-  "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
-    "dotenv": "^17.2.2",
-    "express": "^5.1.0",
-    "helmet": "^8.1.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0",
     "mssql": "^11.0.1",
-    "ws": "^8.18.3"
+    "php-serialize": "^1.1.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.3",
-    "@types/mssql": "^9.1.8",
-    "@types/node": "^24.5.2",
-    "@types/ws": "^8.18.1",
-    "tsx": "^4.20.5",
-    "typescript": "^5.9.2"
+    "@types/jest": "^30.0.0",
+    "jest": "^30.5.2",
+    "supertest": "^7.3.1",
+    "ts-jest": "^29.4.15"
   }
 }
