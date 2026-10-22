@@ -125,4 +125,15 @@ export const ENV = {
 
   // Chunk size for SQL Server IN clause (2100 param limit)
   CHUNK_SIZE: 1000,
+
+  // STO v4 pre-generated bundle artifacts (Plan B Fase 2)
+  STO_BUNDLE_DIR: path.resolve(
+    PROJECT_ROOT,
+    process.env.STO_BUNDLE_DIR || './storage/sto-bundles'
+  ),
+  STO_BUILD_CONCURRENCY: numberFromEnv(process.env.STO_BUILD_CONCURRENCY, 2),
+  STO_RUNNER_INTERVAL_MS: numberFromEnv(process.env.STO_RUNNER_INTERVAL_MS, 2000),
+  STO_BUILD_STALE_MINUTES: numberFromEnv(process.env.STO_BUILD_STALE_MINUTES, 10),
+  // Shared secret for POST /api/v4/sto/internal/prewarm (empty = disabled)
+  STO_INTERNAL_SECRET: process.env.STO_INTERNAL_SECRET || '',
 };

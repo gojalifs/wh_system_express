@@ -9,6 +9,8 @@ import mrRoutes from './app/routes/material-requests.routes.js';
 import docListRoutes from './app/routes/material-requests.query.routes.js';
 import stoRoutes from './app/routes/sto.routes.js';
 import stoV4Routes from './app/routes/sto-v4.routes.js';
+import internalRoutes from './app/routes/internal.routes.js';
+import { startBuildRunner, stopBuildRunner } from './services/buildRunner.js';
 import { createWsServer } from './app/ws/wsHub.js';
 import { ENV } from './core/env.js';
 import { closeAllPools } from './infra/db/db.js';
@@ -30,6 +32,7 @@ export async function start(): Promise<http.Server> {
   app.use(docListRoutes);
   app.use('/api/v3/sto', stoRoutes);
   app.use('/api/v4/sto', stoV4Routes);
+  app.use('/api/v4/sto', internalRoutes);
 
   // 404 handler
   app.use((_req: Request, res: Response) => {
@@ -57,6 +60,9 @@ export async function start(): Promise<http.Server> {
   // <-- Start poller tiap 1 menit (bisa override via env POLL_INTERVAL_MS)
   startExistingQueryPoller(ENV.POLL_INTERVAL_MS);
 
+  // STO v4 bundle build runner (antrean sto_bundle_builds, in-process)
+  startBuildRunner();
+
   await new Promise<void>((resolve) => {
     server.listen(ENV.PORT, ENV.HOST, () => {
       console.log(`HTTP on http://${ENV.HOST}:${ENV.PORT}`);
@@ -70,6 +76,7 @@ export async function start(): Promise<http.Server> {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`\n[sto-express] Received ${signal}, shutting down...`);
+    stopBuildRunner();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await closeAllPools();
     process.exit(0);

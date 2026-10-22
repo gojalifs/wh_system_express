@@ -4,6 +4,12 @@ import {
   getMaterialSerialsV4,
   SERIALS_DEFAULT_PER_PAGE,
 } from '../../services/serialService.js';
+import {
+  decidePackageServe,
+  decideSerialsServe,
+  sendArtifact,
+  sendNotReady,
+} from '../../services/bundleServeService.js';
 import { ENV } from '../../core/env.js';
 
 function parsePositiveInt(value: unknown, fallback: number): number {
@@ -38,10 +44,19 @@ function sendStoError(res: Response, err: unknown, fallbackMessage: string) {
 /**
  * GET /api/v4/sto/sessions/:session_id/package
  * Session package without serials (metadata, scope, all jobs, scans,
- * per-material serial counts).
+ * per-material serial counts). Once the session build is READY the
+ * pre-generated file is served; while it builds, 409 BUNDLE_NOT_READY.
  */
 export async function getSessionPackage(req: Request, res: Response) {
   try {
+    const decision = await decidePackageServe(req.params.session_id);
+    if (decision.state === 'file') {
+      return sendArtifact(req, res, decision.buffer);
+    }
+    if (decision.state === 'not_ready') {
+      return sendNotReady(res, decision.status);
+    }
+
     const data = await getSessionPackageV4(req.params.session_id);
     return res.status(200).json({
       success: true,
@@ -55,13 +70,26 @@ export async function getSessionPackage(req: Request, res: Response) {
 
 /**
  * GET /api/v4/sto/sessions/:session_id/materials/:material_no/serials?page=1&per_page=5000
- * Serials of one material, paginated inside the material.
+ * Serials of one material, paginated inside the material. Served from
+ * the pre-generated per-material files once the build is READY.
  */
 export async function getMaterialSerials(req: Request, res: Response) {
   const page = Math.max(1, parsePositiveInt(req.query.page, 1));
   const perPage = parsePositiveInt(req.query.per_page, SERIALS_DEFAULT_PER_PAGE);
 
   try {
+    const decision = await decideSerialsServe(
+      req.params.session_id,
+      req.params.material_no,
+      page
+    );
+    if (decision.state === 'file') {
+      return sendArtifact(req, res, decision.buffer);
+    }
+    if (decision.state === 'not_ready') {
+      return sendNotReady(res, decision.status);
+    }
+
     const data = await getMaterialSerialsV4(
       req.params.session_id,
       req.params.material_no,
