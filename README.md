@@ -95,6 +95,13 @@ Health check endpoint.
 | `DB_USER` | **required** | SQL Server username (SQL auth, not Windows) |
 | `DB_PASSWORD` | **required** | SQL Server password |
 | `DB_DOMAIN` | | Windows domain (optional) |
+| `STO_DB_HOST` | `DB_HOST` | STO bundle SQL Server host (separate connection) |
+| `STO_DB_PORT` | `DB_PORT` | STO bundle SQL Server port |
+| `STO_DB_DATABASE` | `DB_DATABASE` | STO bundle database name |
+| `STO_DB_USER` | `DB_USER` | STO bundle SQL Server username |
+| `STO_DB_PASSWORD` | `DB_PASSWORD` | STO bundle SQL Server password |
+| `STO_DB_OPTIONS_ENCRYPT` | `DB_OPTIONS_ENCRYPT` | Encrypt STO bundle connection |
+| `STO_DB_OPTIONS_TRUST_SERVER_CERTIFICATE` | `DB_OPTIONS_TRUST_SERVER_CERTIFICATE` | Trust self-signed certificate for STO bundle connection |
 | `LINKED_SERVER` | 192.168.89.218\iGHSSIWSL202 | Linked server for wire_tag view |
 | `LINKED_DB` | iGHS_L2_B3 | Linked server database |
 | `CACHE_PREFIX` | laravel_cache_ | Cache key prefix (must match Laravel) |

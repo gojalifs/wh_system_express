@@ -10,7 +10,7 @@ import docListRoutes from './app/routes/material-requests.query.routes.js';
 import stoRoutes from './app/routes/sto.routes.js';
 import { createWsServer } from './app/ws/wsHub.js';
 import { ENV } from './core/env.js';
-import { closePool } from './infra/db/db.js';
+import { closeAllPools } from './infra/db/db.js';
 import { startExistingQueryPoller } from './infra/pollers/simpleTablePoller.js';
 export async function start() {
     const app = express();
@@ -59,7 +59,7 @@ export async function start() {
         shuttingDown = true;
         console.log(`\n[sto-express] Received ${signal}, shutting down...`);
         await new Promise((resolve) => server.close(() => resolve()));
-        await closePool();
+        await closeAllPools();
         process.exit(0);
     };
     process.once('SIGTERM', () => void shutdown('SIGTERM'));

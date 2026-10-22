@@ -1,68 +1,107 @@
 // src/infra/db.ts
 import sql from 'mssql';
 import { ENV } from '../../core/env.js';
+function buildSqlConfig(input) {
+    return {
+        user: input.user,
+        password: input.password,
+        server: input.server, // gunakan IP/hostname langsung
+        database: input.database,
+        port: input.port ? Number(input.port) : 1433,
+        options: {
+            encrypt: input.encrypt, // true jika TLS; kalau self-signed, trust=true
+            trustServerCertificate: input.trustServerCertificate,
+            enableArithAbort: true,
+            cryptoCredentialsDetails: {
+                minVersion: 'TLSv1.2',
+            },
+        },
+        connectionTimeout: 10_000, // 10s connect timeout
+        requestTimeout: 15_000, // 15s default per-request timeout
+        pool: {
+            max: 10,
+            min: 0,
+            idleTimeoutMillis: 30_000,
+            acquireTimeoutMillis: 30_000,
+            createTimeoutMillis: 30_000,
+            destroyTimeoutMillis: 5_000,
+            reapIntervalMillis: 1_000,
+            createRetryIntervalMillis: 200,
+        },
+    };
+}
 // ---- Konfigurasi pool (ambil dari .env)
-export const sqlConfig = {
+export const sqlConfig = buildSqlConfig({
     user: ENV.SQL_USER,
     password: ENV.SQL_PASS,
-    server: ENV.SQL_HOST, // gunakan IP/hostname langsung
+    server: ENV.SQL_HOST,
     database: ENV.SQL_DB,
-    port: ENV.SQL_PORT ? Number(ENV.SQL_PORT) : 1433,
-    options: {
-        encrypt: ENV.SQL_ENCRYPT, // true jika TLS; kalau self-signed, trust=true
-        trustServerCertificate: ENV.SQL_TRUST_SERVER_CERTIFICATE,
-        enableArithAbort: true,
-        cryptoCredentialsDetails: {
-            minVersion: 'TLSv1.2',
-        },
-    },
-    connectionTimeout: 10_000, // 10s connect timeout
-    requestTimeout: 15_000, // 15s default per-request timeout
-    pool: {
-        max: 10,
-        min: 0,
-        idleTimeoutMillis: 30_000,
-        acquireTimeoutMillis: 30_000,
-        createTimeoutMillis: 30_000,
-        destroyTimeoutMillis: 5_000,
-        reapIntervalMillis: 1_000,
-        createRetryIntervalMillis: 200,
-    },
-};
-let pool = null;
+    port: ENV.SQL_PORT,
+    encrypt: ENV.SQL_ENCRYPT,
+    trustServerCertificate: ENV.SQL_TRUST_SERVER_CERTIFICATE,
+});
+// STO bundle memakai koneksi database sendiri.
+export const stoSqlConfig = buildSqlConfig({
+    user: ENV.STO_DB_USER,
+    password: ENV.STO_DB_PASSWORD,
+    server: ENV.STO_DB_HOST,
+    database: ENV.STO_DB_DATABASE,
+    port: ENV.STO_DB_PORT,
+    encrypt: ENV.STO_DB_ENCRYPT,
+    trustServerCertificate: ENV.STO_DB_TRUST_SERVER_CERTIFICATE,
+});
+const mainPoolState = { pool: null };
+const stoPoolState = { pool: null };
 /**
  * Dapatkan pool tunggal yang reusable.
  * - Hindari race dengan cek `connecting`.
  * - Reset pool jika connect gagal (biar bisa retry call berikutnya).
  */
-export async function getPool() {
+async function getPoolFor(state, config, info) {
     // sudah terhubung → langsung pakai
-    if (pool && pool.connected)
-        return pool;
+    if (state.pool && state.pool.connected)
+        return state.pool;
     // sedang proses connect → kembalikan instance yang sama (request akan di-queue)
-    if (pool && pool.connecting) {
-        return pool;
+    if (state.pool &&
+        state.pool.connecting) {
+        return state.pool;
     }
     // buat pool baru
-    const newPool = new sql.ConnectionPool(sqlConfig);
-    pool = newPool;
+    const newPool = new sql.ConnectionPool(config);
+    state.pool = newPool;
     // log error internal pool (mis. network drop) → reset supaya call berikutnya re-create
     newPool.on('error', (err) => {
-        console.error('[DB] pool error:', err?.message ?? err);
-        if (pool === newPool)
-            pool = null;
+        console.error(`[${info.label}] pool error:`, err?.message ?? err);
+        if (state.pool === newPool)
+            state.pool = null;
     });
     try {
         await newPool.connect();
-        console.log('[DB] connected:', `${ENV.SQL_HOST}:${ENV.SQL_PORT || 1433}/${ENV.SQL_DB}`);
+        console.log(`[${info.label}] connected:`, `${info.host}:${info.port || 1433}/${info.database}`);
     }
     catch (err) {
-        console.error('[DB] connect error:', err?.message ?? err);
-        if (pool === newPool)
-            pool = null; // reset
+        console.error(`[${info.label}] connect error:`, err?.message ?? err);
+        if (state.pool === newPool)
+            state.pool = null; // reset
         throw err;
     }
     return newPool;
+}
+export function getPool() {
+    return getPoolFor(mainPoolState, sqlConfig, {
+        label: 'DB',
+        host: ENV.SQL_HOST,
+        port: ENV.SQL_PORT,
+        database: ENV.SQL_DB,
+    });
+}
+export function getStoPool() {
+    return getPoolFor(stoPoolState, stoSqlConfig, {
+        label: 'STO DB',
+        host: ENV.STO_DB_HOST,
+        port: ENV.STO_DB_PORT,
+        database: ENV.STO_DB_DATABASE,
+    });
 }
 /**
  * Helper: jalankan fungsi query dengan retry backoff ringan
@@ -110,9 +149,7 @@ export async function query(sqlText, params = [], retries = 2) {
             lastError = err;
             if (isTransientError(err) && attempt < retries) {
                 console.warn(`[SQL] Query failed (attempt ${attempt + 1}), retrying...`, err?.message ?? err);
-                if (pool) {
-                    pool = null; // Force reconnect
-                }
+                mainPoolState.pool = null; // Force reconnect
                 await delay(1000 * (attempt + 1));
                 continue;
             }
@@ -133,28 +170,37 @@ export async function queryTyped(sqlText, paramMap = {}) {
     const result = await request.query(sqlText);
     return result.recordset;
 }
+async function closePoolFor(state, label) {
+    if (!state.pool)
+        return;
+    try {
+        await state.pool.close();
+        console.log(`[${label}] pool closed`);
+    }
+    catch (e) {
+        console.error(`[${label}] close error:`, e?.message ?? e);
+    }
+    finally {
+        state.pool = null;
+    }
+}
 /**
  * Tutup pool saat shutdown (SIGINT/SIGTERM)
  */
 export async function closePool() {
-    if (pool) {
-        try {
-            await pool.close();
-            console.log('[DB] pool closed');
-        }
-        catch (e) {
-            console.error('[DB] close error:', e?.message ?? e);
-        }
-        finally {
-            pool = null;
-        }
-    }
+    await closePoolFor(mainPoolState, 'DB');
+}
+export async function closeStoPool() {
+    await closePoolFor(stoPoolState, 'STO DB');
+}
+export async function closeAllPools() {
+    await Promise.all([closePool(), closeStoPool()]);
 }
 // optional: registrasi graceful shutdown di entrypoint (server.ts)
 export function registerDbShutdownHooks() {
     const shutdown = async (sig) => {
-        console.log(`[APP] received ${sig}, closing DB pool...`);
-        await closePool();
+        console.log(`[APP] received ${sig}, closing DB pools...`);
+        await closeAllPools();
         process.exit(0);
     };
     process.on('SIGINT', () => shutdown('SIGINT'));

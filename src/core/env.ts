@@ -16,6 +16,13 @@ function booleanFromEnv(value: string | undefined, fallback: boolean): boolean {
   return value === 'true';
 }
 
+function firstNonEmpty(...values: Array<string | undefined>): string {
+  for (const value of values) {
+    if (value !== undefined && value.trim() !== '') return value;
+  }
+  return '';
+}
+
 const sqlUser = process.env.SQL_USER ?? process.env.DB_USER ?? '';
 const sqlPass = process.env.SQL_PASS ?? process.env.DB_PASSWORD ?? '';
 const sqlHost = process.env.SQL_HOST ?? process.env.DB_HOST ?? '';
@@ -28,6 +35,45 @@ const sqlEncrypt = booleanFromEnv(
   process.env.SQL_ENCRYPT ?? process.env.DB_OPTIONS_ENCRYPT,
   false
 );
+const sqlTrustServerCertificate =
+  process.env.DB_OPTIONS_TRUST_SERVER_CERTIFICATE === undefined
+    ? true
+    : booleanFromEnv(
+        process.env.DB_OPTIONS_TRUST_SERVER_CERTIFICATE,
+        true
+      );
+
+// STO bundle database uses its own connection. Blank values fall back to
+// the main SQL configuration above for backward compatibility.
+const stoDbUser = firstNonEmpty(process.env.STO_DB_USER, sqlUser);
+const stoDbPass = firstNonEmpty(process.env.STO_DB_PASSWORD, sqlPass);
+const stoDbHost = firstNonEmpty(process.env.STO_DB_HOST, sqlHost);
+const stoDbName = firstNonEmpty(process.env.STO_DB_DATABASE, sqlDb);
+const stoDbPort = numberFromEnv(
+  firstNonEmpty(
+    process.env.STO_DB_PORT,
+    process.env.SQL_PORT,
+    process.env.DB_PORT
+  ),
+  sqlPort
+);
+const stoDbEncryptValue = firstNonEmpty(
+  process.env.STO_DB_OPTIONS_ENCRYPT,
+  process.env.SQL_ENCRYPT,
+  process.env.DB_OPTIONS_ENCRYPT
+);
+const stoDbEncrypt =
+  stoDbEncryptValue === ''
+    ? sqlEncrypt
+    : booleanFromEnv(stoDbEncryptValue, sqlEncrypt);
+const stoDbTrustServerCertificateValue = firstNonEmpty(
+  process.env.STO_DB_OPTIONS_TRUST_SERVER_CERTIFICATE,
+  process.env.DB_OPTIONS_TRUST_SERVER_CERTIFICATE
+);
+const stoDbTrustServerCertificate =
+  stoDbTrustServerCertificateValue === ''
+    ? sqlTrustServerCertificate
+    : booleanFromEnv(stoDbTrustServerCertificateValue, true);
 
 export const ENV = {
   NODE_ENV: process.env.NODE_ENV ?? 'production',
@@ -43,11 +89,17 @@ export const ENV = {
   SQL_DB: sqlDb,
   SQL_PORT: sqlPort,
   SQL_ENCRYPT: sqlEncrypt,
-  SQL_TRUST_SERVER_CERTIFICATE:
-    process.env.DB_OPTIONS_TRUST_SERVER_CERTIFICATE === undefined
-      ? true
-      : booleanFromEnv(process.env.DB_OPTIONS_TRUST_SERVER_CERTIFICATE, true),
+  SQL_TRUST_SERVER_CERTIFICATE: sqlTrustServerCertificate,
   POLL_INTERVAL_MS: numberFromEnv(process.env.POLL_INTERVAL_MS, 60_000),
+
+  // SQL Server khusus fitur STO bundle (bisa beda database/server)
+  STO_DB_USER: stoDbUser,
+  STO_DB_PASSWORD: stoDbPass,
+  STO_DB_HOST: stoDbHost,
+  STO_DB_DATABASE: stoDbName,
+  STO_DB_PORT: stoDbPort,
+  STO_DB_ENCRYPT: stoDbEncrypt,
+  STO_DB_TRUST_SERVER_CERTIFICATE: stoDbTrustServerCertificate,
 
   // Laravel file cache directory (absolute path)
   LARAVEL_CACHE_PATH: path.resolve(

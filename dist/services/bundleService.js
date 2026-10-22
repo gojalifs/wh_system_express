@@ -1,6 +1,6 @@
 import { cacheStore } from '../cache/store.js';
 import { buildKeysWithVersion, } from '../cache/keys.js';
-import { getPool } from '../infra/db/db.js';
+import { getStoPool } from '../infra/db/db.js';
 import { queryScanSums, queryDataBox, queryJobs, queryMaterialsFor, queryScansFor, queryWireTagFull, queryScopes, querySession, } from '../infra/db/queries.js';
 import { ENV } from '../core/env.js';
 /**
@@ -203,7 +203,7 @@ async function buildBundleResponse(sessionId, page, perPage, pool, keys) {
  * Tries cache first, falls back to DB build
  */
 export async function getBundle(sessionId, page = 1, perPage = 20) {
-    const pool = await getPool();
+    const pool = await getStoPool();
     // Get session to find batch_id and assigned_user
     const session = await querySession(pool, sessionId);
     if (!session) {

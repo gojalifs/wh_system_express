@@ -3,7 +3,7 @@ import {
   buildKeysWithVersion,
   type BundleCacheKeys,
 } from '../cache/keys.js';
-import { getPool } from '../infra/db/db.js';
+import { getStoPool } from '../infra/db/db.js';
 import {
   queryScanSums,
   queryDataBox,
@@ -93,7 +93,7 @@ export function enrichJobs<T extends JobForEnrichment>(
  * Get session metadata + batch info
  */
 async function getSessionMetadata(
-  pool: Awaited<ReturnType<typeof getPool>>,
+  pool: Awaited<ReturnType<typeof getStoPool>>,
   sessionId: string
 ): Promise<SessionMetadata | null> {
   const session = await querySession(pool, sessionId);
@@ -122,7 +122,7 @@ async function buildBundleResponse(
   sessionId: string,
   page: number,
   perPage: number,
-  pool: Awaited<ReturnType<typeof getPool>>,
+  pool: Awaited<ReturnType<typeof getStoPool>>,
   keys: BundleKeyContext
 ): Promise<StoBundle | null> {
   const [sessionMeta, scopes, jobsRaw] = await Promise.all([
@@ -288,7 +288,7 @@ export async function getBundle(
   page = 1,
   perPage = 20
 ): Promise<BundleResult> {
-  const pool = await getPool();
+  const pool = await getStoPool();
 
   // Get session to find batch_id and assigned_user
   const session = await querySession(pool, sessionId);
