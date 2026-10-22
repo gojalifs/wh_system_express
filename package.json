@@ -2,16 +2,18 @@
   "name": "sto-express",
   "version": "1.0.0",
   "description": "Express.js service for STO offline bundle download - reads Laravel file cache or queries SQL Server",
-  "main": "src/index.js",
+  "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/server.ts",
     "pm2": "pm2 start ecosystem.config.js",
     "pm2:dev": "pm2 start ecosystem.config.js --env development",
-    "test": "node --experimental-vm-modules node_modules/.bin/jest --coverage",
-    "test:watch": "node --experimental-vm-modules node_modules/.bin/jest --watch",
-    "test:ci": "node --experimental-vm-modules node_modules/.bin/jest --ci --coverage"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "test:ci": "node --experimental-vm-modules node_modules/jest/bin/jest.js --ci --coverage"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -20,15 +22,70 @@
     "helmet": "^7.1.0",
     "morgan": "^1.10.0",
     "mssql": "^11.0.1",
-    "php-serialize": "^1.1.2"
+    "php-serialize": "^1.1.2",
+    "ws": "^8.22.0"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.25",
     "@types/jest": "^30.0.0",
+    "@types/morgan": "^1.9.10",
+    "@types/mssql": "^9.1.11",
+    "@types/node": "^20.19.43",
+    "@types/supertest": "^6.0.3",
+    "@types/ws": "^8.18.2",
     "jest": "^30.5.2",
     "supertest": "^7.3.1",
-    "ts-jest": "^29.4.15"
+    "ts-jest": "^29.4.15",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "extensionsToTreatAsEsm": [
+      ".ts"
+    ],
+    "transform": {
+      "^.+\\.tsx?$": [
+        "ts-jest",
+        {
+          "useESM": true,
+          "tsconfig": "<rootDir>/tsconfig.json"
+        }
+      ]
+    },
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1"
+    },
+    "moduleFileExtensions": [
+      "ts",
+      "js",
+      "mjs",
+      "json"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.test.ts"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.ts",
+      "!src/index.ts",
+      "!src/server.ts",
+      "!src/core/env.ts",
+      "!src/domain/**"
+    ],
+    "coverageDirectory": "coverage",
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "html"
+    ],
+    "testTimeout": 10000,
+    "setupFilesAfterEnv": [
+      "<rootDir>/jest.setup.ts"
+    ],
+    "verbose": true
   }
 }

@@ -13,16 +13,17 @@ Android → Express (port 3001) →
 ## Quick Start
 
 ```bash
-cd /home/gojali/projects/wh_system_be/sto_express
 cp .env.example .env
 # Edit .env with your DB credentials
 npm install
+npm run build
 npm start
 ```
 
 ## Production (PM2)
 
 ```bash
+npm run build
 pm2 start ecosystem.config.js
 pm2 save
 pm2 startup
@@ -140,7 +141,10 @@ If wire_tag fails, the endpoint still works but `wire_tag` field will be `null` 
 ## Development
 
 ```bash
-npm run dev  # uses node --watch (Node 18+)
+npm run dev        # tsx watch
+npm run typecheck  # tsc --noEmit
+npm test           # jest
+npm run build      # compile to dist/
 ```
 
 ## Requirements

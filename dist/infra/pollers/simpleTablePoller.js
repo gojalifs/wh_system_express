@@ -1,18 +1,11 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.pollExistingQueryOnce = pollExistingQueryOnce;
-exports.startExistingQueryPoller = startExistingQueryPoller;
-const crypto_1 = __importDefault(require("crypto"));
-const db_1 = require("../db/db");
-const wsHub_1 = require("../../app/ws/wsHub");
+import crypto from 'crypto';
+import { getPool } from '../db/db.js';
+import { sendToAudience } from '../../app/ws/wsHub.js';
 let prevHash = null;
 let warmedUp = false;
 /** Ambil snapshot data "stabil" (tanpa LeadTime) */
 async function fetchSnapshot() {
-    const pool = await (0, db_1.getPool)();
+    const pool = await getPool();
     // SQL setara dengan builder-mu, tapi:
     // - TANPA DATEDIFF/LeadTime
     // - Pakai DISTINCT untuk efek "group by" di Laravel-mu
@@ -52,10 +45,10 @@ function snapshotHash(rows) {
         q: r.request_by ?? '',
         s: r.stsconfirm ?? '',
     })));
-    return crypto_1.default.createHash('sha1').update(str).digest('hex');
+    return crypto.createHash('sha1').update(str).digest('hex');
 }
 /** Jalankan sekali: jika ada perubahan → kirim invalidate */
-async function pollExistingQueryOnce() {
+export async function pollExistingQueryOnce() {
     const rows = await fetchSnapshot();
     const h = snapshotHash(rows);
     // Warmup: pada run pertama, simpan hash tanpa kirim event
@@ -73,12 +66,12 @@ async function pollExistingQueryOnce() {
             ts: Date.now(),
             data: rows,
         };
-        const delivered = (0, wsHub_1.sendToAudience)({ mode: 'broadcast' }, payload);
+        const delivered = sendToAudience({ mode: 'broadcast' }, payload);
         console.log(`[MR-Poller] invalidate delivered=${delivered} hash=${h.slice(0, 8)}...`);
     }
 }
 /** Start interval poller (default 1 menit) */
-function startExistingQueryPoller(intervalMs = 60_000) {
+export function startExistingQueryPoller(intervalMs = 60_000) {
     console.log('starting query poller . . . ');
     // Jalankan pertama kali segera, lalu interval
     pollExistingQueryOnce().catch((err) => console.error('[MR-Poller] first run error', err));

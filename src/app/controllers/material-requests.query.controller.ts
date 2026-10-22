@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { getPool } from '../../infra/db/db';
+import { getPool } from '../../infra/db/db.js';
 
 type Row = {
   transaction_classno: string;

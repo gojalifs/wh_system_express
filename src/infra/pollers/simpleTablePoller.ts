@@ -1,7 +1,7 @@
 import sql from 'mssql';
 import crypto from 'crypto';
-import { getPool } from '../db/db';
-import { sendToAudience } from '../../app/ws/wsHub';
+import { getPool } from '../db/db.js';
+import { sendToAudience } from '../../app/ws/wsHub.js';
 
 /**
  * Kita pakai query existing (Laravel) tapi TANPA kolom LeadTime

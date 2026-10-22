@@ -1,8 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createWsServer = createWsServer;
-exports.sendToAudience = sendToAudience;
-const ws_1 = require("ws");
+import { WebSocketServer, WebSocket } from 'ws';
 const clientsByUser = new Map();
 const allClients = new Set();
 function addClient(userId, ws) {
@@ -21,8 +17,8 @@ function removeClient(ws) {
             clientsByUser.delete(userId);
     }
 }
-function createWsServer(server) {
-    const wss = new ws_1.WebSocketServer({ server, path: '/wh_sys/ws/doc' });
+export function createWsServer(server) {
+    const wss = new WebSocketServer({ server, path: '/wh_sys/ws/doc' });
     wss.on('connection', (ws) => {
         ws.isAlive = true;
         ws.on('pong', function heartbeat() {
@@ -66,11 +62,11 @@ function createWsServer(server) {
     wss.on('close', () => clearInterval(interval));
     return wss;
 }
-function sendToAudience(aud, payload) {
+export function sendToAudience(aud, payload) {
     let sent = 0;
     if (aud.mode === 'broadcast') {
         for (const ws of allClients) {
-            if (ws.readyState === ws_1.WebSocket.OPEN) {
+            if (ws.readyState === WebSocket.OPEN) {
                 try {
                     ws.send(JSON.stringify(payload));
                     sent++;
@@ -86,7 +82,7 @@ function sendToAudience(aud, payload) {
         if (!targets)
             continue;
         for (const ws of targets) {
-            if (ws.readyState === ws_1.WebSocket.OPEN) {
+            if (ws.readyState === WebSocket.OPEN) {
                 try {
                     ws.send(JSON.stringify(payload));
                     sent++;

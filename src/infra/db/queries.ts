@@ -1,7 +1,28 @@
-import { config } from '../config.js';
-import { sql } from './pool.js';
+import sql from 'mssql';
+import { ENV } from '../../core/env.js';
+import type {
+  StoJobRow,
+  StoMaterialRow,
+  StoScanRow,
+  StoScanSumRow,
+  StoScopeRow,
+  StoSessionRow,
+  StoWireTagRow,
+} from '../../domain/sto.js';
 
-const CHUNK_SIZE = config.chunkSize;
+const CHUNK_SIZE = ENV.CHUNK_SIZE;
+
+function uniqueMaterialNos(
+  materialNos: Array<string | null | undefined>
+): string[] {
+  return [
+    ...new Set(
+      materialNos
+        .map((m) => m?.trim())
+        .filter((m): m is string => Boolean(m))
+    ),
+  ];
+}
 
 // ============================================================
 // SCAN SUMS - GROUP BY stocktaking_scan
@@ -22,16 +43,24 @@ GROUP BY [material_no]
  * Execute scan sums query
  * Returns: { [material_no]: qty }
  */
-export async function queryScanSums(pool, batchId, user, sessionId) {
+export async function queryScanSums(
+  pool: sql.ConnectionPool,
+  batchId: number,
+  user: string,
+  sessionId: string
+): Promise<Record<string, number>> {
   const request = pool.request();
   request.input('batchId', sql.Int, batchId);
   request.input('user', sql.NVarChar, user);
   request.input('sessionId', sql.NVarChar, sessionId);
 
-  const result = await request.query(QUERY_SCAN_SUMS);
-  const mapped = {};
+  const result = await request.query<StoScanSumRow>(QUERY_SCAN_SUMS);
+  const mapped: Record<string, number> = {};
   for (const row of result.recordset) {
-    mapped[row.material_no?.trim()] = parseFloat(row.qty) || 0;
+    const key = row.material_no?.trim();
+    if (key) {
+      mapped[key] = Number.parseFloat(String(row.qty)) || 0;
+    }
   }
   return mapped;
 }
@@ -49,14 +78,20 @@ WHERE [is_data_box] = 1
 GROUP BY [material_no]
 `;
 
-export async function queryDataBox(pool, month) {
+export async function queryDataBox(
+  pool: sql.ConnectionPool,
+  month: string
+): Promise<Record<string, number>> {
   const request = pool.request();
   request.input('month', sql.NVarChar, month);
 
-  const result = await request.request.query(QUERY_DATA_BOX);
-  const mapped = {};
+  const result = await request.query<StoScanSumRow>(QUERY_DATA_BOX);
+  const mapped: Record<string, number> = {};
   for (const row of result.recordset) {
-    mapped[row.material_no?.trim()] = parseFloat(row.qty) || 0;
+    const key = row.material_no?.trim();
+    if (key) {
+      mapped[key] = Number.parseFloat(String(row.qty)) || 0;
+    }
   }
   return mapped;
 }
@@ -83,42 +118,34 @@ WHERE [job_assign_to] = @user
   AND [batch] = @batchId
 `;
 
-export async function queryJobs(pool, batchId, user) {
+export async function queryJobs(
+  pool: sql.ConnectionPool,
+  batchId: number,
+  user: string
+): Promise<StoJobRow[]> {
   const request = pool.request();
   request.input('batchId', sql.Int, batchId);
   request.input('user', sql.NVarChar, user);
 
-  const result = await request.query(QUERY_JOBS_BASE);
+  const result = await request.query<StoJobRow>(QUERY_JOBS_BASE);
   return result.recordset;
 }
 
 // ============================================================
 // MATERIALS - material_receiving_mst for material numbers
 // ============================================================
-export const QUERY_MATERIALS = `
-SELECT
-    [id],
-    [material_no],
-    [material_nm],
-    [material_loc],
-    [box_qty],
-    [receiving_serial],
-    [rack_entry_date],
-    [rack_entry_by],
-    [status],
-    [remark]
-FROM [material_receiving_mst]
-WHERE [material_no] IN (${'@'.repeat(CHUNK_SIZE).split('').map((_, i) => `@mat${i}`).join(',')})
-`;
 
 /**
  * Query materials in chunks (SQL Server 2100 param limit)
  */
-export async function queryMaterialsFor(pool, materialNos) {
-  const unique = [...new Set(materialNos.map(m => m?.trim()).filter(Boolean))];
+export async function queryMaterialsFor(
+  pool: sql.ConnectionPool,
+  materialNos: Array<string | null | undefined>
+): Promise<StoMaterialRow[]> {
+  const unique = uniqueMaterialNos(materialNos);
   if (unique.length === 0) return [];
 
-  const allMaterials = [];
+  const allMaterials: StoMaterialRow[] = [];
   for (let i = 0; i < unique.length; i += CHUNK_SIZE) {
     const chunk = unique.slice(i, i + CHUNK_SIZE);
     const request = pool.request();
@@ -127,7 +154,7 @@ export async function queryMaterialsFor(pool, materialNos) {
     });
 
     const placeholders = chunk.map((_, idx) => `@mat${idx}`).join(',');
-    const sql = `
+    const queryText = `
       SELECT
           [id], [material_no], [material_nm], [material_loc],
           [box_qty], [receiving_serial], [rack_entry_date],
@@ -136,7 +163,7 @@ export async function queryMaterialsFor(pool, materialNos) {
       WHERE [material_no] IN (${placeholders})
     `;
 
-    const result = await request.query(sql);
+    const result = await request.query<StoMaterialRow>(queryText);
     allMaterials.push(...result.recordset);
   }
   return allMaterials;
@@ -145,20 +172,17 @@ export async function queryMaterialsFor(pool, materialNos) {
 // ============================================================
 // SCANS - stocktaking_scan for session + materials
 // ============================================================
-export const QUERY_SCANS_BASE = `
-SELECT *
-FROM [stocktaking_scan]
-WHERE [sto_batch] = @batchId
-  AND [stocktaking_by] = @user
-  AND [session_id] = @sessionId
-  AND [material_no] IN (${'@'.repeat(CHUNK_SIZE).split('').map((_, i) => `@mat${i}`).join(',')})
-`;
-
-export async function queryScansFor(pool, batchId, user, sessionId, materialNos) {
-  const unique = [...new Set(materialNos.map(m => m?.trim()).filter(Boolean))];
+export async function queryScansFor(
+  pool: sql.ConnectionPool,
+  batchId: number,
+  user: string,
+  sessionId: string,
+  materialNos: Array<string | null | undefined>
+): Promise<StoScanRow[]> {
+  const unique = uniqueMaterialNos(materialNos);
   if (unique.length === 0) return [];
 
-  const allScans = [];
+  const allScans: StoScanRow[] = [];
   for (let i = 0; i < unique.length; i += CHUNK_SIZE) {
     const chunk = unique.slice(i, i + CHUNK_SIZE);
     const request = pool.request();
@@ -171,7 +195,7 @@ export async function queryScansFor(pool, batchId, user, sessionId, materialNos)
     });
 
     const placeholders = chunk.map((_, idx) => `@mat${idx}`).join(',');
-    const sql = `
+    const queryText = `
       SELECT *
       FROM [stocktaking_scan]
       WHERE [sto_batch] = @batchId
@@ -180,7 +204,7 @@ export async function queryScansFor(pool, batchId, user, sessionId, materialNos)
         AND [material_no] IN (${placeholders})
     `;
 
-    const result = await request.query(sql);
+    const result = await request.query<StoScanRow>(queryText);
     allScans.push(...result.recordset);
   }
   return allScans;
@@ -189,13 +213,20 @@ export async function queryScansFor(pool, batchId, user, sessionId, materialNos)
 // ============================================================
 // WIRE TAG - Linked server view
 // ============================================================
-const LINKED_VIEW = `[192.168.89.218\\iGHSSIWSL202].[iGHS_L2_B3].[dbo].[B3R_Wire_tag_View]`;
+function quoteIdentifier(value: string): string {
+  return `[${value.replace(/]/g, ']]')}]`;
+}
 
-export async function queryWireTagFull(pool, materialNos) {
-  const unique = [...new Set(materialNos.map(m => m?.trim()).filter(Boolean))];
+const LINKED_VIEW = `${quoteIdentifier(ENV.LINKED_SERVER)}.${quoteIdentifier(ENV.LINKED_DB)}.[dbo].[B3R_Wire_tag_View]`;
+
+export async function queryWireTagFull(
+  pool: sql.ConnectionPool,
+  materialNos: Array<string | null | undefined>
+): Promise<Record<string, string>> {
+  const unique = uniqueMaterialNos(materialNos);
   if (unique.length === 0) return {};
 
-  const wireTagMap = {};
+  const wireTagMap: Record<string, string> = {};
   for (let i = 0; i < unique.length; i += CHUNK_SIZE) {
     const chunk = unique.slice(i, i + CHUNK_SIZE);
     const request = pool.request();
@@ -205,21 +236,27 @@ export async function queryWireTagFull(pool, materialNos) {
     });
 
     const placeholders = chunk.map((_, idx) => `@mat${idx}`).join(',');
-    const sql = `
+    const queryText = `
       SELECT [Matl_no], [wire_cd]
       FROM ${LINKED_VIEW}
       WHERE [Matl_no] IN (${placeholders})
     `;
 
     try {
-      const result = await request.query(sql);
+      const result = await request.query<StoWireTagRow>(queryText);
       for (const row of result.recordset) {
-        wireTagMap[row.Matl_no?.trim()] = row.wire_cd;
+        const key = row.Matl_no?.trim();
+        if (key && row.wire_cd !== null) {
+          wireTagMap[key] = row.wire_cd;
+        }
       }
     } catch (err) {
       // Linked server might not be accessible with SQL Server auth
       // Log warning but don't fail the whole request
-      console.warn('[WireTag] Linked server query failed (may need linked server security config):', err.message);
+      console.warn(
+        '[WireTag] Linked server query failed (may need linked server security config):',
+        (err as Error)?.message ?? err
+      );
       // Continue with empty wireTagMap for this chunk
     }
   }
@@ -235,10 +272,13 @@ FROM [stocktaking_snapshot_scope]
 WHERE [session_id] = @sessionId
 `;
 
-export async function queryScopes(pool, sessionId) {
+export async function queryScopes(
+  pool: sql.ConnectionPool,
+  sessionId: string
+): Promise<StoScopeRow[]> {
   const request = pool.request();
   request.input('sessionId', sql.NVarChar, sessionId);
-  const result = await request.query(QUERY_SCOPES);
+  const result = await request.query<StoScopeRow>(QUERY_SCOPES);
   return result.recordset;
 }
 
@@ -252,11 +292,14 @@ LEFT JOIN [stocktaking_batch] b ON s.[batch_id] = b.[id]
 WHERE s.[session_id] = @sessionId
 `;
 
-export async function querySession(pool, sessionId) {
+export async function querySession(
+  pool: sql.ConnectionPool,
+  sessionId: string
+): Promise<StoSessionRow | null> {
   const request = pool.request();
   request.input('sessionId', sql.NVarChar, sessionId);
-  const result = await request.query(QUERY_SESSION);
-  return result.recordset[0] || null;
+  const result = await request.query<StoSessionRow>(QUERY_SESSION);
+  return result.recordset[0] ?? null;
 }
 
-export { sql } from './pool.js';
+export { sql } from './db.js';

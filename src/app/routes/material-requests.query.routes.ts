@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getMaterialRequests } from '../controllers/material-requests.query.controller';
+import { getMaterialRequests } from '../controllers/material-requests.query.controller.js';
 
 const r = Router();
 r.get('/material-requests', getMaterialRequests);

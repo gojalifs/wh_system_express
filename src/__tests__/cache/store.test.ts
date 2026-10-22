@@ -1,4 +1,9 @@
-import { LaravelFileCacheStore, MemoryCacheStore, CompositeCacheStore } from '../../cache/store.js';
+import { jest } from '@jest/globals';
+import {
+  LaravelFileCacheStore,
+  MemoryCacheStore,
+  CompositeCacheStore,
+} from '../../cache/store.js';
 
 describe('Cache Store', () => {
   beforeEach(() => {
@@ -6,7 +11,7 @@ describe('Cache Store', () => {
   });
 
   describe('LaravelFileCacheStore', () => {
-    let store;
+    let store: LaravelFileCacheStore;
 
     beforeEach(() => {
       store = new LaravelFileCacheStore('/custom/cache/path');
@@ -38,7 +43,7 @@ describe('Cache Store', () => {
   });
 
   describe('MemoryCacheStore', () => {
-    let store;
+    let store: MemoryCacheStore;
 
     beforeEach(() => {
       store = new MemoryCacheStore();
@@ -55,7 +60,10 @@ describe('Cache Store', () => {
     test('returns expired for expired entries', async () => {
       await store.set('key1', 'value1', 0);
 
-      store.store.set('key1', { data: 'value1', expiry: Date.now() - 1000 });
+      store.store.set('key1', {
+        data: 'value1',
+        expiry: Date.now() - 1000,
+      });
 
       const result = await store.get('key1');
 
@@ -90,7 +98,7 @@ describe('Cache Store', () => {
   });
 
   describe('CompositeCacheStore', () => {
-    let store;
+    let store: CompositeCacheStore;
 
     beforeEach(() => {
       store = new CompositeCacheStore('/nonexistent/cache/path');
@@ -100,23 +108,27 @@ describe('Cache Store', () => {
       await store.set('new-key', 'new-value', 60);
 
       const result = await store.get('new-key');
-      expect(result.data).toBe('new-value');
+      expect(result?.data).toBe('new-value');
     });
 
     test.skip('has() checks memory store when laravel cache misses', async () => {
       await store.memory.set('in-memory', 'value', 60);
-      
+
       // Spy on laravel.has to return false
-      const laravelHasSpy = jest.spyOn(store.laravel, 'has').mockResolvedValue(false);
-      
+      const laravelHasSpy = jest
+        .spyOn(store.laravel, 'has')
+        .mockResolvedValue(false);
+
       const result = await store.has('in-memory');
       expect(result).toBe(true);
-      
+
       // Restore
       laravelHasSpy.mockRestore();
-      
+
       // Test not found
-      const nowhereSpy = jest.spyOn(store.laravel, 'has').mockResolvedValue(false);
+      const nowhereSpy = jest
+        .spyOn(store.laravel, 'has')
+        .mockResolvedValue(false);
       expect(await store.has('nowhere')).toBe(false);
       nowhereSpy.mockRestore();
     });

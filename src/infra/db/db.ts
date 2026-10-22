@@ -1,6 +1,6 @@
 // src/infra/db.ts
 import sql from 'mssql';
-import { ENV } from '../../core/env';
+import { ENV } from '../../core/env.js';
 
 // ---- Konfigurasi pool (ambil dari .env)
 export const sqlConfig: sql.config = {
@@ -11,11 +11,24 @@ export const sqlConfig: sql.config = {
   port: ENV.SQL_PORT ? Number(ENV.SQL_PORT) : 1433,
   options: {
     encrypt: ENV.SQL_ENCRYPT, // true jika TLS; kalau self-signed, trust=true
-    trustServerCertificate: true,
+    trustServerCertificate: ENV.SQL_TRUST_SERVER_CERTIFICATE,
+    enableArithAbort: true,
+    cryptoCredentialsDetails: {
+      minVersion: 'TLSv1.2',
+    },
   },
   connectionTimeout: 10_000, // 10s connect timeout
   requestTimeout: 15_000, // 15s default per-request timeout
-  pool: { max: 10, min: 0, idleTimeoutMillis: 30_000 },
+  pool: {
+    max: 10,
+    min: 0,
+    idleTimeoutMillis: 30_000,
+    acquireTimeoutMillis: 30_000,
+    createTimeoutMillis: 30_000,
+    destroyTimeoutMillis: 5_000,
+    reapIntervalMillis: 1_000,
+    createRetryIntervalMillis: 200,
+  },
 };
 
 let pool: sql.ConnectionPool | null = null;
@@ -30,7 +43,9 @@ export async function getPool(): Promise<sql.ConnectionPool> {
   if (pool && pool.connected) return pool;
 
   // sedang proses connect → kembalikan instance yang sama (request akan di-queue)
-  if (pool && (pool as any).connecting) return pool;
+  if (pool && (pool as sql.ConnectionPool & { connecting?: boolean }).connecting) {
+    return pool;
+  }
 
   // buat pool baru
   const newPool = new sql.ConnectionPool(sqlConfig);
@@ -49,7 +64,7 @@ export async function getPool(): Promise<sql.ConnectionPool> {
       `${ENV.SQL_HOST}:${ENV.SQL_PORT || 1433}/${ENV.SQL_DB}`
     );
   } catch (err) {
-    console.error('[DB] connect error:', (err as any)?.message ?? err);
+    console.error('[DB] connect error:', (err as Error)?.message ?? err);
     if (pool === newPool) pool = null; // reset
     throw err;
   }
@@ -65,8 +80,8 @@ export async function withDbRetry<T>(
   label = 'db-op',
   maxRetry = 3
 ): Promise<T> {
-  let attempt = 0,
-    lastErr: any;
+  let attempt = 0;
+  let lastErr: unknown;
   while (attempt < maxRetry) {
     try {
       const p = await getPool();
@@ -76,7 +91,7 @@ export async function withDbRetry<T>(
       attempt++;
       console.error(
         `[DB] ${label} failed (attempt ${attempt}/${maxRetry}):`,
-        (e as any)?.message ?? e
+        (e as Error)?.message ?? e
       );
       await delay(1000 * attempt); // 1s, 2s, 3s ...
     }
@@ -88,6 +103,75 @@ function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function isTransientError(err: unknown): boolean {
+  const code = (err as { code?: string } | null)?.code;
+  return (
+    code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'ECONNREFUSED'
+  );
+}
+
+/**
+ * Execute a query with automatic retry on transient failures
+ */
+export async function query<Entity>(
+  sqlText: string,
+  params: unknown[] = [],
+  retries = 2
+): Promise<Entity[]> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const currentPool = await getPool();
+      const request = currentPool.request();
+      params.forEach((param, index) => {
+        request.input(`param${index}`, param);
+      });
+      const result = await request.query<Entity>(sqlText);
+      return result.recordset;
+    } catch (err) {
+      lastError = err;
+      if (isTransientError(err) && attempt < retries) {
+        console.warn(
+          `[SQL] Query failed (attempt ${attempt + 1}), retrying...`,
+          (err as Error)?.message ?? err
+        );
+        if (pool) {
+          pool = null; // Force reconnect
+        }
+        await delay(1000 * (attempt + 1));
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw lastError;
+}
+
+export interface TypedQueryParam {
+  type: sql.ISqlType | (() => sql.ISqlType);
+  value: unknown;
+}
+
+/**
+ * Execute a query with typed parameters (for complex types)
+ */
+export async function queryTyped<Entity>(
+  sqlText: string,
+  paramMap: Record<string, TypedQueryParam> = {}
+): Promise<Entity[]> {
+  const currentPool = await getPool();
+  const request = currentPool.request();
+
+  for (const [name, { type, value }] of Object.entries(paramMap)) {
+    request.input(name, type, value);
+  }
+
+  const result = await request.query<Entity>(sqlText);
+  return result.recordset;
+}
+
 /**
  * Tutup pool saat shutdown (SIGINT/SIGTERM)
  */
@@ -97,7 +181,7 @@ export async function closePool(): Promise<void> {
       await pool.close();
       console.log('[DB] pool closed');
     } catch (e) {
-      console.error('[DB] close error:', (e as any)?.message ?? e);
+      console.error('[DB] close error:', (e as Error)?.message ?? e);
     } finally {
       pool = null;
     }
@@ -114,3 +198,5 @@ export function registerDbShutdownHooks() {
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
+
+export { sql };

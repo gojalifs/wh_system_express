@@ -1,7 +1,9 @@
 import { cacheStore } from '../cache/store.js';
-import { getVersionOnly, buildKeysWithVersion } from '../cache/keys.js';
-import { parseLaravelCacheEntry } from '../cache/parser.js';
-import { getPool } from '../db/pool.js';
+import {
+  buildKeysWithVersion,
+  type BundleCacheKeys,
+} from '../cache/keys.js';
+import { getPool } from '../infra/db/db.js';
 import {
   queryScanSums,
   queryDataBox,
@@ -11,17 +13,38 @@ import {
   queryWireTagFull,
   queryScopes,
   querySession,
-} from '../db/queries.js';
-import { config } from '../config.js';
+} from '../infra/db/queries.js';
+import { ENV } from '../core/env.js';
+import type {
+  BundleResult,
+  EnrichedJob,
+  JobEnrichment,
+  JobForEnrichment,
+  SessionMetadata,
+  StoBundle,
+  StoJobRow,
+  StoMaterialRow,
+  StoScanRow,
+} from '../domain/sto.js';
+
+type ScanSums = Record<string, number>;
+type WireTagMap = Record<string, string>;
+
+interface BundleKeyContext extends BundleCacheKeys {
+  batchId: number;
+  user: string;
+}
 
 /**
  * Sort jobs: unscanned first, then by material_number
  */
-export function sortJobsUnscannedFirst(jobs, scanSums) {
-  const sums = new Set(Object.keys(scanSums || {}));
+export function sortJobsUnscannedFirst<
+  T extends { material_number?: string | null },
+>(jobs: readonly T[], scanSums: ScanSums | null | undefined): T[] {
+  const sums = new Set(Object.keys(scanSums ?? {}));
   return [...jobs].sort((a, b) => {
-    const aKey = (a.material_number || '').trim();
-    const bKey = (b.material_number || '').trim();
+    const aKey = (a.material_number ?? '').trim();
+    const bKey = (b.material_number ?? '').trim();
     const aScanned = sums.has(aKey);
     const bScanned = sums.has(bKey);
 
@@ -35,16 +58,23 @@ export function sortJobsUnscannedFirst(jobs, scanSums) {
 /**
  * Enrich jobs with scan data
  */
-export function enrichJobs(jobs, scanSums, dataBox, wireTagMap) {
-  return jobs.map(job => {
-    const key = (job.material_number || '').trim();
+export function enrichJobs<T extends JobForEnrichment>(
+  jobs: T[],
+  scanSums: ScanSums,
+  dataBox: ScanSums,
+  wireTagMap: WireTagMap
+): Array<T & JobEnrichment> {
+  return jobs.map((job) => {
+    const key = (job.material_number ?? '').trim();
     const scannedQty = scanSums[key] || 0;
     const boxQty = dataBox[key] || 0;
-    const inventoryQty = parseFloat(job.inventory_qty) || 0;
+    const inventoryQty =
+      Number.parseFloat(String(job.inventory_qty ?? 0)) || 0;
 
-    let scannedPercent = null;
+    let scannedPercent: number | null = null;
     if (inventoryQty > 0) {
-      scannedPercent = Math.round(((scannedQty + boxQty) / inventoryQty) * 100 * 100) / 100;
+      scannedPercent =
+        Math.round(((scannedQty + boxQty) / inventoryQty) * 100 * 100) / 100;
     } else if (inventoryQty === 0 && scanSums[key] !== undefined) {
       scannedPercent = 100;
     }
@@ -62,7 +92,10 @@ export function enrichJobs(jobs, scanSums, dataBox, wireTagMap) {
 /**
  * Get session metadata + batch info
  */
-async function getSessionMetadata(pool, sessionId) {
+async function getSessionMetadata(
+  pool: Awaited<ReturnType<typeof getPool>>,
+  sessionId: string
+): Promise<SessionMetadata | null> {
   const session = await querySession(pool, sessionId);
   if (!session) return null;
 
@@ -72,46 +105,59 @@ async function getSessionMetadata(pool, sessionId) {
     status: session.status,
     total_expected_count: session.total_expected_count,
     snapshot_checksum: session.snapshot_checksum,
-    batch: session.batch_code ? {
-      id: session.batch_id,
-      batch: session.batch_code,
-      status: session.batch_status,
-    } : null,
+    batch: session.batch_code
+      ? {
+          id: session.batch_id,
+          batch: session.batch_code,
+          status: session.batch_status,
+        }
+      : null,
   };
 }
 
 /**
  * Build full bundle response (matches Laravel shape exactly)
  */
-async function buildBundleResponse(sessionId, page, perPage, pool, keys) {
+async function buildBundleResponse(
+  sessionId: string,
+  page: number,
+  perPage: number,
+  pool: Awaited<ReturnType<typeof getPool>>,
+  keys: BundleKeyContext
+): Promise<StoBundle | null> {
   const [sessionMeta, scopes, jobsRaw] = await Promise.all([
     getSessionMetadata(pool, sessionId),
-    queryScopes(await getPool(), sessionId),
-    queryJobs(await getPool(), keys.batchId, keys.user),
+    queryScopes(pool, sessionId),
+    queryJobs(pool, keys.batchId, keys.user),
   ]);
 
   if (!sessionMeta) return null;
 
   // Get scan sums (from cache or DB)
-  let scanSums = {};
-  const scanSumsEntry = await cacheStore.get(keys.scanSums);
+  let scanSums: ScanSums = {};
+  const scanSumsEntry = await cacheStore.get<ScanSums>(keys.scanSums);
   if (scanSumsEntry && !scanSumsEntry.expired && scanSumsEntry.data) {
     scanSums = scanSumsEntry.data;
   } else {
-    scanSums = await queryScanSums(await getPool(), keys.batchId, keys.user, sessionId);
-    await cacheStore.set(keys.scanSums, scanSums, config.ttl.scanSums);
+    scanSums = await queryScanSums(
+      pool,
+      keys.batchId,
+      keys.user,
+      sessionId
+    );
+    await cacheStore.set(keys.scanSums, scanSums, ENV.STO_TTL.scanSums);
   }
 
   // Get dataBox (from cache or DB)
   const month = new Date().toISOString().slice(0, 7).replace('-', '');
-  let dataBox = {};
+  let dataBox: ScanSums = {};
   const dataBoxKey = keys.dataBox(month);
-  const dataBoxEntry = await cacheStore.get(dataBoxKey);
+  const dataBoxEntry = await cacheStore.get<ScanSums>(dataBoxKey);
   if (dataBoxEntry && !dataBoxEntry.expired && dataBoxEntry.data) {
     dataBox = dataBoxEntry.data;
   } else {
-    dataBox = await queryDataBox(await getPool(), month);
-    await cacheStore.set(dataBoxKey, dataBox, config.ttl.dataBox);
+    dataBox = await queryDataBox(pool, month);
+    await cacheStore.set(dataBoxKey, dataBox, ENV.STO_TTL.dataBox);
   }
 
   // Sort jobs
@@ -136,7 +182,10 @@ async function buildBundleResponse(sessionId, page, perPage, pool, keys) {
         from: 0,
         to: 0,
       },
-      scope: scopes.map(s => ({ rack_code: s.rack_code, material_no: s.material_no })),
+      scope: scopes.map((s) => ({
+        rack_code: s.rack_code,
+        material_no: s.material_no,
+      })),
       jobs: [],
       materials: [],
       scans: [],
@@ -144,23 +193,33 @@ async function buildBundleResponse(sessionId, page, perPage, pool, keys) {
   }
 
   // Material numbers for this page
-  const pageMaterialNos = [...new Set(
-    pagedJobs.map(j => j.material_number?.trim()).filter(Boolean)
-  )];
+  const pageMaterialNos = [
+    ...new Set(
+      pagedJobs
+        .map((j) => j.material_number?.trim())
+        .filter((m): m is string => Boolean(m))
+    ),
+  ];
 
   // Fetch materials, scans, wire_tag in parallel
   const [materials, scans, wireTagMap] = await Promise.all([
-    queryMaterialsFor(await getPool(), pageMaterialNos),
-    queryScansFor(await getPool(), keys.batchId, keys.user, sessionId, pageMaterialNos),
-    (async () => {
+    queryMaterialsFor(pool, pageMaterialNos),
+    queryScansFor(
+      pool,
+      keys.batchId,
+      keys.user,
+      sessionId,
+      pageMaterialNos
+    ),
+    (async (): Promise<WireTagMap> => {
       // Try cache first
       const wireTagKey = keys.wireTagFull;
-      const entry = await cacheStore.get(wireTagKey);
+      const entry = await cacheStore.get<WireTagMap>(wireTagKey);
       if (entry && !entry.expired && entry.data) {
         return entry.data;
       }
-      const wireTag = await queryWireTagFull(await getPool(), pageMaterialNos);
-      await cacheStore.set(wireTagKey, wireTag, config.ttl.wireTag);
+      const wireTag = await queryWireTagFull(pool, pageMaterialNos);
+      await cacheStore.set(wireTagKey, wireTag, ENV.STO_TTL.wireTag);
       return wireTag;
     })(),
   ]);
@@ -169,7 +228,7 @@ async function buildBundleResponse(sessionId, page, perPage, pool, keys) {
   const enrichedJobs = enrichJobs(pagedJobs, scanSums, dataBox, wireTagMap);
 
   // Group materials and scans by material_no for response
-  const materialsByNo = {};
+  const materialsByNo: Record<string, StoMaterialRow> = {};
   for (const m of materials) {
     const key = m.material_no?.trim();
     if (key && !materialsByNo[key]) {
@@ -177,7 +236,7 @@ async function buildBundleResponse(sessionId, page, perPage, pool, keys) {
     }
   }
 
-  const scansByNo = {};
+  const scansByNo: Record<string, StoScanRow[]> = {};
   for (const s of scans) {
     const key = s.material_no?.trim();
     if (key) {
@@ -188,11 +247,12 @@ async function buildBundleResponse(sessionId, page, perPage, pool, keys) {
 
   // Build response arrays
   const responseMaterials = pageMaterialNos
-    .map(key => materialsByNo[key])
-    .filter(Boolean);
+    .map((key) => materialsByNo[key])
+    .filter((m): m is StoMaterialRow => Boolean(m));
 
-  const responseScans = pageMaterialNos
-    .flatMap(key => scansByNo[key] || []);
+  const responseScans = pageMaterialNos.flatMap(
+    (key) => scansByNo[key] || []
+  );
 
   // Pagination metadata
   const from = total > 0 && offset < total ? offset + 1 : 0;
@@ -209,7 +269,10 @@ async function buildBundleResponse(sessionId, page, perPage, pool, keys) {
       from,
       to,
     },
-    scope: scopes.map(s => ({ rack_code: s.rack_code, material_no: s.material_no })),
+    scope: scopes.map((s) => ({
+      rack_code: s.rack_code,
+      material_no: s.material_no,
+    })),
     jobs: enrichedJobs,
     materials: responseMaterials,
     scans: responseScans,
@@ -220,7 +283,11 @@ async function buildBundleResponse(sessionId, page, perPage, pool, keys) {
  * Main entry: get bundle for session/page
  * Tries cache first, falls back to DB build
  */
-export async function getBundle(sessionId, page = 1, perPage = 20) {
+export async function getBundle(
+  sessionId: string,
+  page = 1,
+  perPage = 20
+): Promise<BundleResult> {
   const pool = await getPool();
 
   // Get session to find batch_id and assigned_user
@@ -233,18 +300,25 @@ export async function getBundle(sessionId, page = 1, perPage = 20) {
   }
 
   const batchId = session.batch_id;
-  const user = session.assigned_user;
+  const user = session.assigned_user ?? '';
 
   // Build cache keys with current version
-  const keys = await buildKeysWithVersion(cacheStore, sessionId, batchId, user);
-  keys.batchId = batchId;
-  keys.user = user;
+  const keys = await buildKeysWithVersion(
+    cacheStore,
+    sessionId,
+    batchId,
+    user
+  );
 
   // Try bundle cache first
   const bundleKey = keys.bundle(page, perPage);
-  const bundleEntry = await cacheStore.get(bundleKey);
+  const bundleEntry = await cacheStore.get<StoBundle>(bundleKey);
 
-  if (bundleEntry && !bundleEntry.expired && bundleEntry.data?.session_id === sessionId) {
+  if (
+    bundleEntry &&
+    !bundleEntry.expired &&
+    bundleEntry.data?.session_id === sessionId
+  ) {
     return {
       ...bundleEntry.data,
       _cacheHit: true,
@@ -253,11 +327,27 @@ export async function getBundle(sessionId, page = 1, perPage = 20) {
   }
 
   // Cache miss - build from DB
-  console.log(`[Bundle] Cache miss for ${sessionId} page ${page}/${perPage}, building from DB`);
-  const bundle = await buildBundleResponse(sessionId, page, perPage, pool, keys);
+  console.log(
+    `[Bundle] Cache miss for ${sessionId} page ${page}/${perPage}, building from DB`
+  );
+  const bundle = await buildBundleResponse(
+    sessionId,
+    page,
+    perPage,
+    pool,
+    {
+      ...keys,
+      batchId,
+      user,
+    }
+  );
+
+  if (!bundle) {
+    throw new Error('SESSION_NOT_FOUND');
+  }
 
   // Store in memory cache (Express's own cache) for subsequent requests
-  await cacheStore.set(bundleKey, bundle, config.ttl.bundle);
+  await cacheStore.set(bundleKey, bundle, ENV.STO_TTL.bundle);
 
   return {
     ...bundle,
@@ -265,5 +355,3 @@ export async function getBundle(sessionId, page = 1, perPage = 20) {
     _message: 'Session package ready.',
   };
 }
-
-export { config };
