@@ -8,6 +8,7 @@ import notifyRoutes from './app/routes/notify.routes.js';
 import mrRoutes from './app/routes/material-requests.routes.js';
 import docListRoutes from './app/routes/material-requests.query.routes.js';
 import stoRoutes from './app/routes/sto.routes.js';
+import stoV4Routes from './app/routes/sto-v4.routes.js';
 import { createWsServer } from './app/ws/wsHub.js';
 import { ENV } from './core/env.js';
 import { closeAllPools } from './infra/db/db.js';
@@ -28,6 +29,7 @@ export async function start(): Promise<http.Server> {
   app.use(mrRoutes);
   app.use(docListRoutes);
   app.use('/api/v3/sto', stoRoutes);
+  app.use('/api/v4/sto', stoV4Routes);
 
   // 404 handler
   app.use((_req: Request, res: Response) => {

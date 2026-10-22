@@ -111,3 +111,39 @@ export interface BundleResult extends StoBundle {
   _cacheHit: boolean;
   _message: string;
 }
+
+// ============================================================
+// STO v4 - split package (no serials) + per-material serials
+// ============================================================
+export interface StoSerialRow {
+  id: number;
+  receiving_serial: string | null;
+  material_no: string | null;
+  box_qty: number | string | null;
+  material_loc: string | null;
+}
+
+export interface StoMaterialSerialCount {
+  material_no: string;
+  serial_count: number;
+}
+
+export interface SessionPackageV4 {
+  session_id: string;
+  metadata: SessionMetadata;
+  /** Distinct materials in this session (from the job list, NOT distinct racks). */
+  material_count: number;
+  scope: Array<Pick<StoScopeRow, 'rack_code' | 'material_no'>>;
+  jobs: Array<EnrichedJob<StoJobRow>>;
+  scans: StoScanRow[];
+  /** Expected serial count per material; seeds the per-material download tracker. */
+  materials: StoMaterialSerialCount[];
+}
+
+export interface MaterialSerialsV4 {
+  session_id: string;
+  material_no: string;
+  snapshot_checksum: string | null;
+  pagination: StoPagination;
+  serials: StoSerialRow[];
+}
