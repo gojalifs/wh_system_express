@@ -1,5 +1,8 @@
 import { Request, Response } from 'express';
 import { getPool } from '../../infra/db/db.js';
+import { createLogger } from '../../infra/logger.js';
+
+const log = createLogger('material-requests');
 
 type Row = {
   transaction_classno: string;
@@ -64,7 +67,7 @@ export async function getMaterialRequests(_req: Request, res: Response) {
       data: rs.recordset,
     });
   } catch (e: any) {
-    console.error('[GET /material-requests] error:', e?.message ?? e);
+    log.error('GET /material-requests failed', e?.message ?? e);
     return res.status(500).json({
       success: false,
       message: 'Failed get picking document list',
