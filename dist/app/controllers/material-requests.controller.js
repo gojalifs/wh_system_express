@@ -1,9 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.postMRInvalidate = postMRInvalidate;
-exports.postMRDelta = postMRDelta;
-const wsHub_1 = require("../ws/wsHub");
-function postMRInvalidate(req, res) {
+import { sendToAudience } from '../ws/wsHub.js';
+export function postMRInvalidate(req, res) {
     const { audience, version } = req.body ?? {};
     if (!audience || typeof version !== 'number') {
         return res
@@ -15,10 +11,10 @@ function postMRInvalidate(req, res) {
         version,
         ts: Date.now(),
     };
-    const delivered = (0, wsHub_1.sendToAudience)(audience, payload);
+    const delivered = sendToAudience(audience, payload);
     return res.json({ ok: true, delivered });
 }
-function postMRDelta(req, res) {
+export function postMRDelta(req, res) {
     const { audience, version, changed } = req.body ?? {};
     if (!audience || typeof version !== 'number' || typeof changed !== 'object') {
         return res
@@ -35,6 +31,6 @@ function postMRDelta(req, res) {
         },
         ts: Date.now(),
     };
-    const delivered = (0, wsHub_1.sendToAudience)(audience, payload);
+    const delivered = sendToAudience(audience, payload);
     return res.json({ ok: true, delivered });
 }

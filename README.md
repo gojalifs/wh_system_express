@@ -13,16 +13,17 @@ Android → Express (port 3001) →
 ## Quick Start
 
 ```bash
-cd /home/gojali/projects/wh_system_be/sto_express
 cp .env.example .env
 # Edit .env with your DB credentials
 npm install
+npm run build
 npm start
 ```
 
 ## Production (PM2)
 
 ```bash
+npm run build
 pm2 start ecosystem.config.js
 pm2 save
 pm2 startup
@@ -94,6 +95,13 @@ Health check endpoint.
 | `DB_USER` | **required** | SQL Server username (SQL auth, not Windows) |
 | `DB_PASSWORD` | **required** | SQL Server password |
 | `DB_DOMAIN` | | Windows domain (optional) |
+| `STO_DB_HOST` | `DB_HOST` | STO bundle SQL Server host (separate connection) |
+| `STO_DB_PORT` | `DB_PORT` | STO bundle SQL Server port |
+| `STO_DB_DATABASE` | `DB_DATABASE` | STO bundle database name |
+| `STO_DB_USER` | `DB_USER` | STO bundle SQL Server username |
+| `STO_DB_PASSWORD` | `DB_PASSWORD` | STO bundle SQL Server password |
+| `STO_DB_OPTIONS_ENCRYPT` | `DB_OPTIONS_ENCRYPT` | Encrypt STO bundle connection |
+| `STO_DB_OPTIONS_TRUST_SERVER_CERTIFICATE` | `DB_OPTIONS_TRUST_SERVER_CERTIFICATE` | Trust self-signed certificate for STO bundle connection |
 | `LINKED_SERVER` | 192.168.89.218\iGHSSIWSL202 | Linked server for wire_tag view |
 | `LINKED_DB` | iGHS_L2_B3 | Linked server database |
 | `CACHE_PREFIX` | laravel_cache_ | Cache key prefix (must match Laravel) |
@@ -140,7 +148,10 @@ If wire_tag fails, the endpoint still works but `wire_tag` field will be `null` 
 ## Development
 
 ```bash
-npm run dev  # uses node --watch (Node 18+)
+npm run dev        # tsx watch
+npm run typecheck  # tsc --noEmit
+npm test           # jest
+npm run build      # compile to dist/
 ```
 
 ## Requirements

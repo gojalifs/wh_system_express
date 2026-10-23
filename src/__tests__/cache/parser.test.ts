@@ -1,11 +1,14 @@
-import { parseLaravelCacheEntry, readLaravelCacheFile, getLaravelCacheFilePath } from '../../cache/parser.js';
+import {
+  parseLaravelCacheEntry,
+} from '../../cache/parser.js';
 
 describe('Cache Parser', () => {
   describe('parseLaravelCacheEntry', () => {
     test('parses valid cache entry with data', () => {
       const expiry = Math.floor(Date.now() / 1000) + 3600;
       const expiryStr = expiry.toString().padStart(10, '0');
-      const payload = `a:2:{s:3:"key";s:5:"value";s:6:"number";i:42;}`;
+      const payload =
+        'a:2:{s:3:"key";s:5:"value";s:6:"number";i:42;}';
       const raw = `${expiryStr}${payload}`;
 
       const result = parseLaravelCacheEntry(raw);
@@ -48,8 +51,9 @@ describe('Cache Parser', () => {
 
       const result = parseLaravelCacheEntry(raw);
 
-      expect(result.expired).toBe(false);
-      expect(result.data).toBeDefined();
+      expect(result).not.toBeNull();
+      expect(result?.expired).toBe(false);
+      expect(result?.data).toBeDefined();
       // parseError is set when unserialize throws, but may not throw for all invalid data
       // Just verify the function doesn't throw and returns a valid structure
       expect(result).toHaveProperty('expired');

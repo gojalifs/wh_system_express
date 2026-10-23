@@ -1,10 +1,7 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.getMaterialRequests = getMaterialRequests;
-const db_1 = require("../../infra/db/db");
-async function getMaterialRequests(_req, res) {
+import { getPool } from '../../infra/db/db.js';
+export async function getMaterialRequests(_req, res) {
     try {
-        const pool = await (0, db_1.getPool)();
+        const pool = await getPool();
         // NOTE:
         // - Query ini setara dengan builder Laravel kamu.
         // - Jika perlu kurangi blocking, boleh tambah WITH (NOLOCK) di tiap tabel.

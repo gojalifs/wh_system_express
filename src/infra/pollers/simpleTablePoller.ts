@@ -1,7 +1,10 @@
 import sql from 'mssql';
 import crypto from 'crypto';
-import { getPool } from '../db/db';
-import { sendToAudience } from '../../app/ws/wsHub';
+import { getPool } from '../db/db.js';
+import { sendToAudience } from '../../app/ws/wsHub.js';
+import { createLogger } from '../logger.js';
+
+const log = createLogger('mr-poller');
 
 /**
  * Kita pakai query existing (Laravel) tapi TANPA kolom LeadTime
@@ -96,23 +99,21 @@ export async function pollExistingQueryOnce() {
       data: rows,
     };
     const delivered = sendToAudience({ mode: 'broadcast' }, payload);
-    console.log(
-      `[MR-Poller] invalidate delivered=${delivered} hash=${h.slice(0, 8)}...`
-    );
+    log.info(`invalidate delivered=${delivered} hash=${h.slice(0, 8)}...`);
   }
 }
 
 /** Start interval poller (default 1 menit) */
 export function startExistingQueryPoller(intervalMs = 60_000) {
-  console.log('starting query poller . . . ');
+  log.info('starting query poller');
 
   // Jalankan pertama kali segera, lalu interval
   pollExistingQueryOnce().catch((err) =>
-    console.error('[MR-Poller] first run error', err)
+    log.error('first run error', err)
   );
   setInterval(() => {
     pollExistingQueryOnce().catch((err) =>
-      console.error('[MR-Poller] on looping error', err)
+      log.error('looping error', err)
     );
   }, intervalMs);
 }

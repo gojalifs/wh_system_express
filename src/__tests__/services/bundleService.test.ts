@@ -1,4 +1,7 @@
-import { sortJobsUnscannedFirst, enrichJobs } from '../../services/bundleService.js';
+import {
+  sortJobsUnscannedFirst,
+  enrichJobs,
+} from '../../services/bundleService.js';
 
 describe('Bundle Service - Pure Functions', () => {
   describe('sortJobsUnscannedFirst', () => {
@@ -39,10 +42,12 @@ describe('Bundle Service - Pure Functions', () => {
 
   describe('enrichJobs', () => {
     test('adds scanned_qty, scanned_percent, data_box, wire_tag', () => {
-      const jobs = [{
-        material_number: 'MAT001',
-        inventory_qty: 100,
-      }];
+      const jobs = [
+        {
+          material_number: 'MAT001',
+          inventory_qty: 100,
+        },
+      ];
       const scanSums = { MAT001: 30 };
       const dataBox = { MAT001: 10 };
       const wireTagMap = { MAT001: 'WIRE001' };

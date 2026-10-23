@@ -1,4 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const index_1 = require("./index");
-(0, index_1.start)();
+import { start } from './index.js';
+start().catch((err) => {
+    console.error('[sto-express] Failed to start:', err);
+    process.exit(1);
+});

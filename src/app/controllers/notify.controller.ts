@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { Audience, ServerNotification } from '../../domain/types';
-import { sendToAudience } from '../ws/wsHub';
+import { Audience, ServerNotification } from '../../domain/types.js';
+import { sendToAudience } from '../ws/wsHub.js';
 
 export function postNotify(req: Request, res: Response) {
   const { audience, title, body, data } = req.body ?? {};

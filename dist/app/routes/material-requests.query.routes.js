@@ -1,7 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const material_requests_query_controller_1 = require("../controllers/material-requests.query.controller");
-const r = (0, express_1.Router)();
-r.get('/material-requests', material_requests_query_controller_1.getMaterialRequests);
-exports.default = r;
+import { Router } from 'express';
+import { getMaterialRequests } from '../controllers/material-requests.query.controller.js';
+const r = Router();
+r.get('/material-requests', getMaterialRequests);
+export default r;

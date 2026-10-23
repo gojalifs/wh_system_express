@@ -1,4 +1,8 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { unserialize } from 'php-serialize';
+import type { CacheEntry } from './store.js';
 
 /**
  * Laravel file cache format:
@@ -6,7 +10,7 @@ import { unserialize } from 'php-serialize';
  * - Rest: PHP serialized value
  * Example: "1716543210a:2:{i:0;s:3:"foo";i:1;s:3:"bar";}"
  */
-export function parseLaravelCacheEntry(raw) {
+export function parseLaravelCacheEntry(raw: unknown): CacheEntry | null {
   if (!raw || typeof raw !== 'string') {
     return null;
   }
@@ -19,8 +23,8 @@ export function parseLaravelCacheEntry(raw) {
   const expiryStr = raw.substring(0, 10);
   const payload = raw.substring(10);
 
-  const expiry = parseInt(expiryStr, 10);
-  if (isNaN(expiry)) {
+  const expiry = Number.parseInt(expiryStr, 10);
+  if (Number.isNaN(expiry)) {
     return null;
   }
 
@@ -35,21 +39,26 @@ export function parseLaravelCacheEntry(raw) {
     return { expired: false, data };
   } catch (e) {
     // If unserialize fails, return raw payload for debugging
-    return { expired: false, data: payload, parseError: e.message };
+    return {
+      expired: false,
+      data: payload,
+      parseError: e instanceof Error ? e.message : String(e),
+    };
   }
 }
 
 /**
  * Read and parse a Laravel cache file
  */
-import fs from 'fs';
-
-export function readLaravelCacheFile(filepath) {
+export function readLaravelCacheFile(
+  filepath: string
+): CacheEntry | null {
   try {
     const raw = fs.readFileSync(filepath, 'utf8');
     return parseLaravelCacheEntry(raw);
   } catch (e) {
-    if (e.code === 'ENOENT') {
+    const error = e as NodeJS.ErrnoException;
+    if (error.code === 'ENOENT') {
       return null; // File not found = cache miss
     }
     throw e;
@@ -60,20 +69,22 @@ export function readLaravelCacheFile(filepath) {
  * Find Laravel cache file by key
  * Laravel uses SHA1 of key as filename in subdirectories
  */
-import crypto from 'crypto';
-
-export function getLaravelCacheFilePath(cacheDir, key) {
+export function getLaravelCacheFilePath(
+  cacheDir: string,
+  key: string
+): string {
   const hash = crypto.createHash('sha1').update(key).digest('hex');
   const prefix = hash.substring(0, 2);
   return path.join(cacheDir, prefix, hash);
 }
 
-import path from 'path';
-
 /**
  * Get cache value by key from Laravel file cache
  */
-export function getFromLaravelCache(cacheDir, key) {
+export function getFromLaravelCache(
+  cacheDir: string,
+  key: string
+): CacheEntry | null {
   const filepath = getLaravelCacheFilePath(cacheDir, key);
   return readLaravelCacheFile(filepath);
 }

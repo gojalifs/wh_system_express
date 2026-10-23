@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { ClientMessage, OutboundEvent, Audience } from '../../domain/types';
-import http from 'http';
+import { ClientMessage, OutboundEvent, Audience } from '../../domain/types.js';
+import http from 'node:http';
 
 type WSWithMeta = WebSocket & { __userId?: string; isAlive?: boolean };
 

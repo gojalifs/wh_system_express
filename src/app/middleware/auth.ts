@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { ENV } from '../../core/env';
+import { ENV } from '../../core/env.js';
 
 export function auth(req: Request, res: Response, next: NextFunction) {
   const hdr = req.headers['authorization'] ?? '';
