@@ -94,16 +94,19 @@ export async function claimNextBuild(): Promise<StoBuildRow | null> {
 export async function updateBuildProgress(
   id: number,
   materialsDone: number,
-  maxSerialCount: number
+  maxSerialCount: number,
+  totalMaterials: number
 ): Promise<void> {
   const p = await pool();
   const request = p.request();
   request.input('id', sql.BigInt, id);
   request.input('done', sql.Int, materialsDone);
   request.input('maxSerial', sql.Int, maxSerialCount);
+  request.input('total', sql.Int, totalMaterials);
   await request.query(`
     UPDATE [sto_bundle_builds]
     SET [materials_done] = @done,
+        [total_materials] = @total,
         [max_serial_count] = @maxSerial,
         [updated_at] = SYSUTCDATETIME()
     WHERE [id] = @id

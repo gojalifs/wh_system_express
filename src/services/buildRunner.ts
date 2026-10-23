@@ -41,6 +41,13 @@ export async function buildSessionBundle(build: StoBuildRow): Promise<void> {
     data: pkg,
   });
 
+  // Publish the total as soon as it is known, so progress readers (the Web
+  // assignment badge) can show x/y while the build runs — total_materials
+  // used to stay NULL until completeBuild. Best-effort, like all progress.
+  await updateBuildProgress(build.id, 0, 0, pkg.materials.length).catch(
+    () => undefined
+  );
+
   let maxSerialCount = 0;
   let materialsDone = 0;
 
@@ -64,9 +71,12 @@ export async function buildSessionBundle(build: StoBuildRow): Promise<void> {
     }
     materialsDone += 1;
     // Progress is best-effort: a failed progress write must not fail the build.
-    await updateBuildProgress(build.id, materialsDone, maxSerialCount).catch(
-      () => undefined
-    );
+    await updateBuildProgress(
+      build.id,
+      materialsDone,
+      maxSerialCount,
+      pkg.materials.length
+    ).catch(() => undefined);
   }
 
   await completeBuild(build.id, pkg.materials.length, maxSerialCount);
