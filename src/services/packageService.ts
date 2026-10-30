@@ -17,6 +17,7 @@ import type {
   SessionMetadata,
   SessionPackageV4,
   StoMaterialSerialCount,
+  StoScanRow,
 } from '../domain/sto.js';
 
 type ScanSums = Record<string, number>;
@@ -129,4 +130,46 @@ export async function getSessionPackageV4(
     scans,
     materials,
   };
+}
+
+/**
+ * Live server scans for one session (STO v4 scan restore).
+ *
+ * Same rows, same filters, same session guards as the `scans` field of
+ * getSessionPackageV4 — but read from stocktaking_scan at request time,
+ * never from the pre-generated bundle file. The bundle file is frozen at
+ * assign time (before anyone scanned), so a phone that downloads the
+ * package later would otherwise see zero counts even though the scans
+ * already reached the server. The mobile app fetches this endpoint right
+ * after a package download and upserts the rows locally.
+ *
+ * Deliberately NOT part of the bundle: jobs, wire tags and serial files
+ * stay pre-generated and zero-copy served; only this small, infrequent
+ * query goes live.
+ */
+export async function getSessionScansV4(
+  sessionId: string
+): Promise<StoScanRow[]> {
+  const pool = await getStoPool();
+
+  const session = await querySession(pool, sessionId);
+  if (!session) {
+    throw new Error('SESSION_NOT_FOUND');
+  }
+  if (session.status !== 'ACTIVE') {
+    throw new Error('SESSION_NOT_ACTIVE');
+  }
+
+  const batchId = session.batch_id;
+  const user = session.assigned_user ?? '';
+  const jobs = await queryJobs(pool, batchId, user);
+  const materialNos = [
+    ...new Set(
+      jobs
+        .map((j) => j.material_number?.trim())
+        .filter((m): m is string => Boolean(m))
+    ),
+  ];
+
+  return queryScansFor(pool, batchId, user, sessionId, materialNos);
 }
