@@ -1,5 +1,8 @@
 import { Request, Response } from 'express';
-import { getSessionPackageV4 } from '../../services/packageService.js';
+import {
+  getSessionPackageV4,
+  getSessionScansV4,
+} from '../../services/packageService.js';
 import {
   getMaterialSerialsV4,
   SERIALS_DEFAULT_PER_PAGE,
@@ -68,6 +71,28 @@ export async function getSessionPackage(req: Request, res: Response) {
     });
   } catch (err) {
     return sendStoError(res, err, 'Gagal mengambil data session.');
+  }
+}
+
+/**
+ * GET /api/v4/sto/sessions/:session_id/scans
+ * Live server scans for one session (STO v4 scan restore). Unlike the
+ * package endpoint, this never serves the pre-generated bundle file:
+ * the file's scans are frozen at assign time, so a phone that joins
+ * mid-session (or moves phones) would otherwise restore zero counts.
+ * The mobile app calls this right after a package download and upserts
+ * the rows locally. Independent of bundle build state by design.
+ */
+export async function getSessionScans(req: Request, res: Response) {
+  try {
+    const scans = await getSessionScansV4(req.params.session_id);
+    return res.status(200).json({
+      success: true,
+      message: 'Session scans ready.',
+      data: scans,
+    });
+  } catch (err) {
+    return sendStoError(res, err, 'Gagal mengambil scan session.');
   }
 }
 
